@@ -15,14 +15,14 @@ jobs:
     rustup_toolchain: ${{ variables.clippy_toolchain }}
 - job: Windows
   pool:
-    vmImage: vs2017-win2016
+    vmImage: windows-2019
   steps:
     - template: admin/pipelines/rustup.yml
     - template: admin/pipelines/cargo-steps.yml
     - template: admin/pipelines/bench.yml
 - job: MacOS
   pool:
-    vmImage: macOS-10.13
+    vmImage: macOS-10.14
   steps:
     - template: admin/pipelines/rustup.yml
     - template: admin/pipelines/cargo-steps.yml
@@ -30,6 +30,7 @@ jobs:
 - job: Linux
   pool:
     vmImage: ubuntu-16.04
+  container: ubuntu:18.04
   strategy:
     matrix:
       stable:
@@ -41,6 +42,7 @@ jobs:
       minimum:
         rustup_toolchain: ${{ variables.minimum_toolchain }}
   steps:
+    - template: admin/pipelines/ubuntu.yml
     - template: admin/pipelines/rustup.yml
       parameters:
         rustup_toolchain: $(rustup_toolchain)
@@ -53,7 +55,9 @@ jobs:
 - job: Coverage
   pool:
     vmImage: ubuntu-16.04
+  container: ubuntu:18.04
   steps:
+    - template: admin/pipelines/ubuntu.yml
     - template: admin/pipelines/rustup.yml
       parameters:
         rustup_toolchain: nightly
@@ -64,7 +68,9 @@ jobs:
 - job: MinimalVersions
   pool:
     vmImage: ubuntu-16.04
+  container: ubuntu:18.04
   steps:
+    - template: admin/pipelines/ubuntu.yml
     - template: admin/pipelines/rustup.yml
       parameters:
         rustup_toolchain: nightly

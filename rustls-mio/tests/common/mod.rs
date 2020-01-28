@@ -9,8 +9,8 @@ use std::str;
 use std::thread;
 use std::time;
 
-use regex;
 use self::regex::Regex;
+use regex;
 use tempfile;
 
 macro_rules! embed_files {
@@ -37,6 +37,7 @@ macro_rules! embed_files {
             let dir = tempfile::TempDir::new().unwrap();
 
             fs::create_dir(dir.path().join("ecdsa")).unwrap();
+            fs::create_dir(dir.path().join("eddsa")).unwrap();
             fs::create_dir(dir.path().join("rsa")).unwrap();
 
             $(
@@ -68,6 +69,23 @@ embed_files! {
     (ECDSA_INTER_REQ, "ecdsa", "inter.req");
     (ECDSA_NISTP256_PEM, "ecdsa", "nistp256.pem");
     (ECDSA_NISTP384_PEM, "ecdsa", "nistp384.pem");
+
+    (EDDSA_CA_CERT, "eddsa", "ca.cert");
+    (EDDSA_CA_DER, "eddsa", "ca.der");
+    (EDDSA_CA_KEY, "eddsa", "ca.key");
+    (EDDSA_CLIENT_CERT, "eddsa", "client.cert");
+    (EDDSA_CLIENT_CHAIN, "eddsa", "client.chain");
+    (EDDSA_CLIENT_FULLCHAIN, "eddsa", "client.fullchain");
+    (EDDSA_CLIENT_KEY, "eddsa", "client.key");
+    (EDDSA_CLIENT_REQ, "eddsa", "client.req");
+    (EDDSA_END_CERT, "eddsa", "end.cert");
+    (EDDSA_END_CHAIN, "eddsa", "end.chain");
+    (EDDSA_END_FULLCHAIN, "eddsa", "end.fullchain");
+    (EDDSA_END_KEY, "eddsa", "end.key");
+    (EDDSA_END_REQ, "eddsa", "end.req");
+    (EDDSA_INTER_CERT, "eddsa", "inter.cert");
+    (EDDSA_INTER_KEY, "eddsa", "inter.key");
+    (EDDSA_INTER_REQ, "eddsa", "inter.req");
 
     (RSA_CA_CERT, "rsa", "ca.cert");
     (RSA_CA_DER, "rsa", "ca.der");
@@ -124,18 +142,22 @@ fn unused_port(mut port: u16) -> u16 {
 pub fn skipped(why: &str) {
     use std::io;
     let mut stdout = io::stdout();
-    write!(&mut stdout,
-           "[  SKIPPED  ]        because: {}\n -- UNTESTED: ",
-           why)
-        .unwrap();
+    write!(
+        &mut stdout,
+        "[  SKIPPED  ]        because: {}\n -- UNTESTED: ",
+        why
+    )
+    .unwrap();
 }
 
-pub fn tlsserver_find() -> &'static str {
-    "../target/debug/examples/tlsserver"
+pub fn tlsserver_find() -> PathBuf {
+    let exec = env::current_exe().unwrap();
+    exec.parent().unwrap().join("../examples/tlsserver")
 }
 
-pub fn tlsclient_find() -> &'static str {
-    "../target/debug/examples/tlsclient"
+pub fn tlsclient_find() -> PathBuf {
+    let exec = env::current_exe().unwrap();
+    exec.parent().unwrap().join("../examples/tlsclient")
 }
 
 pub fn openssl_find() -> String {
@@ -146,7 +168,11 @@ pub fn openssl_find() -> String {
     // We need a homebrew openssl, because OSX comes with
     // 0.9.8y or something equally ancient!
     if cfg!(target_os = "macos") {
-        return "/usr/local/opt/openssl/bin/openssl".to_string();
+        if Path::new("/usr/local/opt/openssl@1.1/bin/openssl").is_file() {
+            return "/usr/local/opt/openssl@1.1/bin/openssl".to_string();
+        } else {
+            return "/usr/local/opt/openssl/bin/openssl".to_string();
+        }
     }
 
     "openssl".to_string()
@@ -159,9 +185,7 @@ fn openssl_supports_option(cmd: &str, opt: &str) -> bool {
         .output()
         .unwrap();
 
-    String::from_utf8(output.stderr)
-        .unwrap()
-        .contains(opt)
+    String::from_utf8(output.stderr).unwrap().contains(opt)
 }
 
 // Does openssl s_client support -alpn?
@@ -359,16 +383,15 @@ impl TlsClient {
             args.push(&mtustring);
         }
 
+        let cwd = env::current_dir().unwrap();
         let output = process::Command::new(tlsclient_find())
             .args(&args)
-            .env("SSLKEYLOGFILE", "./sslkeylogfile.txt")
+            .env("SSLKEYLOGFILE", cwd.join("sslkeylogfile.txt"))
             .output()
-            .unwrap_or_else(|e| panic!("failed to execute: {}", e));
+            .unwrap_or_else(|e| panic!("failed to execute: {}. {:?}", e, tlsclient_find()));
 
-        let stdout_str = String::from_utf8(output.stdout.clone())
-            .unwrap();
-        let stderr_str = String::from_utf8(output.stderr.clone())
-            .unwrap();
+        let stdout_str = String::from_utf8(output.stdout.clone()).unwrap();
+        let stderr_str = String::from_utf8(output.stderr.clone()).unwrap();
 
         for expect in &self.expect_output {
             let re = Regex::new(expect).unwrap();
@@ -435,6 +458,10 @@ impl OpenSSLServer {
         OpenSSLServer::new(test_ca, "ecdsa", start_port)
     }
 
+    pub fn new_eddsa(test_ca: &Path, start_port: u16) -> OpenSSLServer {
+        OpenSSLServer::new(test_ca, "eddsa", start_port)
+    }
+
     pub fn partial_chain(&mut self) -> &mut Self {
         self.chain = self.intermediate.clone();
         self
@@ -473,8 +500,7 @@ impl OpenSSLServer {
                 .stderr(process::Stdio::null());
         }
 
-        let child = subp.spawn()
-            .expect("cannot run openssl server");
+        let child = subp.spawn().expect("cannot run openssl server");
 
         let port_up = wait_for_port(self.port);
         port_up.expect("server did not come up");
@@ -752,7 +778,8 @@ impl OpenSSLClient {
             .arg(&self.cafile)
             .args(&extra_args);
 
-        let output = subp.output()
+        let output = subp
+            .output()
             .unwrap_or_else(|e| panic!("failed to execute: {}", e));
 
         let stdout_str = unsafe { String::from_utf8_unchecked(output.stdout.clone()) };

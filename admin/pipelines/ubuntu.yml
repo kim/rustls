@@ -1,0 +1,3 @@
+steps:
+  - script: apt-get install build-essential curl sudo
+    displayName: "install dev tools"
